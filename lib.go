@@ -519,47 +519,6 @@ func GetDateFromStrSafe(s string, t time.Time) time.Time {
 	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
 }
 
-// GenerateResultsFromDateStrings takes an input start and end date (either can
-// be the default '0-0-0' values, in which case it uses today for the start,
-// and a year from now for the end), and calculates all of the calculable
-// transactions for the provided range.
-// func GenerateResultsFromDateStrings(
-// 	txs *[]TX,
-// 	bal int,
-// 	startDt string,
-// 	endDt string,
-// 	statusHook func(status string),
-// ) ([]Result, error) {
-// 	now := time.Now()
-// 	stYr, stMo, stDay := ParseYearMonthDateString(startDt)
-// 	endYr, endMo, endDay := ParseYearMonthDateString(endDt)
-
-// 	if startDt == "0-0-0" || startDt == "--" || startDt == "" {
-// 		stYr = now.Year()
-// 		stMo = int(now.Month())
-// 		stDay = now.Day()
-// 	}
-
-// 	if endDt == "0-0-0" || endDt == "--" || endDt == "" {
-// 		endYr = now.Year() + 1
-// 		endMo = int(now.Month())
-// 		endDay = now.Day()
-// 	}
-
-// 	res, err := GetResults(
-// 		*txs,
-// 		time.Date(stYr, time.Month(stMo), stDay, 0, 0, 0, 0, time.UTC),
-// 		time.Date(endYr, time.Month(endMo), endDay, 0, 0, 0, 0, time.UTC),
-// 		bal,
-// 		statusHook,
-// 	)
-// 	if err != nil {
-// 		return []Result{}, fmt.Errorf("failed to get results: %v", err.Error())
-// 	}
-
-// 	return res, nil
-// }
-
 type TXStats struct {
 	DailySpending   int
 	DailyIncome     int
@@ -683,15 +642,6 @@ func GetResultsCSVString(results *[]Result) string {
 
 	return b.String()
 }
-
-// func GetUser() *user.User {
-// 	user, err := user.Current()
-// 	if err != nil {
-// 		log.Printf("failed to get the user's home directory: %v", err.Error())
-// 	}
-
-// 	return user
-// }
 
 // GetNextSort takes the current sort, which is typically something like
 // OrderAsc, OrderDesc, or None, and attempts to do some basic string parsing
