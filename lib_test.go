@@ -8,9 +8,10 @@ import (
 
 	fpl "git.cmcode.dev/cmcode/finance-planner-lib"
 	"git.cmcode.dev/cmcode/uuid"
+	"github.com/teambition/rrule-go"
 )
 
-//nolint:lll
+//nolint:cyclop,maintidx,lll
 func TestGetResults(t *testing.T) {
 	t.Parallel()
 
@@ -45,9 +46,6 @@ func TestGetResults(t *testing.T) {
 		err bool
 		// Length of results (number of days) to expect.
 		days int
-		// If there are no expected or accidental errors, the stats function
-		// should be called and computed.
-		stats string
 	}{
 		{
 			// The first test case consists of a monthly expense of $100 and no
@@ -76,17 +74,6 @@ func TestGetResults(t *testing.T) {
 			}},
 			false,
 			days,
-			`Here are some statistics about your finances.
-
-Daily spending: $-1.17
-Daily income: $0.00
-Daily net: $-1.17,
-Monthly spending: $-14.02
-Monthly income: $0.00
-Monthly net: $-14.02
-Yearly spending: $-426.52
-Yearly income: $0.00
-Yearly net: $-426.52`,
 		},
 		{
 			// The second test case consists of an equal income and expense
@@ -137,17 +124,6 @@ Yearly net: $-426.52`,
 			}},
 			false,
 			days,
-			`Here are some statistics about your finances.
-
-Daily spending: $-1.17
-Daily income: $1.17
-Daily net: $0.00,
-Monthly spending: $-14.02
-Monthly income: $14.02
-Monthly net: $0.00
-Yearly spending: $-426.52
-Yearly income: $426.52
-Yearly net: $0.00`,
 		},
 		{
 			// The third test case handles a few edge cases.
@@ -178,17 +154,6 @@ Yearly net: $0.00`,
 			}},
 			false,
 			days,
-			`Here are some statistics about your finances.
-
-Daily spending: $-3.33
-Daily income: $0.00
-Daily net: $-3.33,
-Monthly spending: $-39.91
-Monthly income: $0.00
-Monthly net: $-39.91
-Yearly spending: $-1213.93
-Yearly income: $0.00
-Yearly net: $-1213.93`,
 		},
 		{
 			// The fourth test case is simple and triggers an immediate error.
@@ -199,7 +164,138 @@ Yearly net: $-1213.93`,
 			[]fpl.Result{},
 			true,
 			0,
-			"",
+		},
+		{
+			// This test case is the same as the first test case, while also
+			// specifying that this transaction can occur on every possible day
+			// of the week.
+			[]fpl.TX{
+				{
+					Amount:      tx1Amount,
+					Name:        tx1,
+					Active:      true,
+					Frequency:   fpl.MONTHLY,
+					Interval:    1,
+					StartsDay:   1,
+					StartsMonth: 1,
+					StartsYear:  2024,
+					ID:          uuid.New(),
+					Weekdays: map[int]bool{
+						rrule.MO.Day(): true,
+						rrule.TU.Day(): true,
+						rrule.WE.Day(): true,
+						rrule.TH.Day(): true,
+						rrule.FR.Day(): true,
+						rrule.SA.Day(): true,
+						rrule.SU.Day(): true,
+						-1:             true,  // test a nonsense input value
+						-2:             false, // test a nonsense input value
+					},
+				},
+			},
+			start,
+			end,
+			startBalance,
+			[]fpl.Result{{
+				Balance:            startBalance + expectedCostCase1,
+				DiffFromStart:      expectedCostCase1,
+				CumulativeExpenses: expectedCostCase1,
+				CumulativeIncome:   0,
+			}},
+			false,
+			days,
+		},
+		{
+			// This test case has a daily recurrence pattern, as well
+			// as a nonsense recurrence pattern that should default to daily.
+			[]fpl.TX{
+				{
+					Amount:      tx1Amount,
+					Name:        tx1,
+					Active:      true,
+					Frequency:   fpl.WEEKLY,
+					Interval:    1,
+					StartsDay:   1,
+					StartsMonth: 1,
+					StartsYear:  2024,
+					ID:          uuid.New(),
+					Weekdays: map[int]bool{
+						rrule.MO.Day(): true,
+						rrule.TU.Day(): true,
+						rrule.WE.Day(): true,
+						rrule.TH.Day(): true,
+						rrule.FR.Day(): true,
+						rrule.SA.Day(): true,
+						rrule.SU.Day(): true,
+					},
+				},
+			},
+			start,
+			end,
+			startBalance,
+			[]fpl.Result{{
+				Balance:            startBalance - 7640000,
+				DiffFromStart:      -7640000,
+				CumulativeExpenses: -7640000,
+				CumulativeIncome:   0,
+			}},
+			false,
+			days,
+		},
+		{
+			// This test case has a yearly recurrence pattern that occurs
+			// only twice over a span of two years.
+			[]fpl.TX{
+				{
+					Amount:      tx1Amount,
+					Name:        tx1,
+					Active:      true,
+					Frequency:   rrule.YEARLY.String(),
+					Interval:    1,
+					StartsDay:   1,
+					StartsMonth: 1,
+					StartsYear:  2024,
+					EndsDay:     31,
+					EndsMonth:   12,
+					EndsYear:    2025,
+					ID:          uuid.New(),
+				},
+			},
+			start,
+			end,
+			startBalance,
+			[]fpl.Result{{
+				Balance:            startBalance + 2*tx1Amount,
+				DiffFromStart:      2 * tx1Amount,
+				CumulativeExpenses: 2 * tx1Amount,
+				CumulativeIncome:   0,
+			}},
+			false,
+			days,
+		},
+		{
+			// This test case uses an rrule string that matches the previous
+			// test case.
+			[]fpl.TX{
+				{
+					Amount: tx1Amount,
+					Name:   tx1,
+					Active: true,
+					RRule:  "DTSTART:20240101T000000Z\nRRULE:FREQ=YEARLY;INTERVAL=1;UNTIL=20251231T000000Z",
+					ID:     uuid.New(),
+				},
+			},
+			start,
+			end,
+			startBalance,
+			[]fpl.Result{{
+				Balance:            startBalance + 2*tx1Amount,
+				DiffFromStart:      2 * tx1Amount,
+				CumulativeExpenses: 2 * tx1Amount,
+				CumulativeIncome:   0,
+			}},
+			false,
+			days,
 		},
 	}
 
@@ -257,17 +353,10 @@ Yearly net: $-1213.93`,
 			t.Logf("test %v wrong CumulativeIncome: got %v, want %v (%v results)", i, gotCumulativeIncome, wantCumulativeExpenses, len(got))
 			t.Fail()
 		}
-
-		// compute stats
-		gotstats := fpl.GetStats(got)
-		// t.Logf("gotstats: %v", gotstats)
-		if gotstats != test.stats {
-			t.Logf("test %v wrong stats: got %v, want %v", i, gotstats, test.stats)
-			t.Fail()
-		}
 	}
 }
 
+//nolint:cyclop
 func TestGetNewTX(t *testing.T) {
 	t.Parallel()
 
@@ -466,6 +555,242 @@ func TestGetNextSort(t *testing.T) {
 		got := fpl.GetNextSort(test.current, test.next)
 		if got != test.want {
 			t.Logf("test %v failed: got %v but wanted %v", i, got, test.want)
+			t.FailNow()
+		}
+	}
+}
+
+func TestGetStats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		results []fpl.Result
+		want    string
+	}{
+		{
+			[]fpl.Result{
+				{CumulativeIncome: 10000, CumulativeExpenses: -10000},
+				{CumulativeIncome: 20000, CumulativeExpenses: -20000},
+			}, `Here are some statistics about your finances.
+
+Daily spending: $-100.00
+Daily income: $100.00
+Daily net: $0.00
+Monthly spending: $-3043.75
+Monthly income: $3043.75
+Monthly net: $0.00
+Yearly spending: $-36525.00
+Yearly income: $36525.00
+Yearly net: $0.00`,
+		},
+		{
+			[]fpl.Result{
+				{CumulativeIncome: 10000, CumulativeExpenses: -10000},
+			}, `Here are some statistics about your finances.
+
+Daily spending: $0.00
+Daily income: $0.00
+Daily net: $0.00
+Monthly spending: $0.00
+Monthly income: $0.00
+Monthly net: $0.00
+Yearly spending: $0.00
+Yearly income: $0.00
+Yearly net: $0.00`,
+		},
+		{
+			[]fpl.Result{}, `Here are some statistics about your finances.
+
+Daily spending: $0.00
+Daily income: $0.00
+Daily net: $0.00
+Monthly spending: $0.00
+Monthly income: $0.00
+Monthly net: $0.00
+Yearly spending: $0.00
+Yearly income: $0.00
+Yearly net: $0.00`,
+		},
+	}
+
+	for i, test := range tests {
+		got := fpl.GetStats(test.results)
+		if got != test.want {
+			t.Logf("test %v failed: got %v but wanted %v", i, got, test.want)
+			t.FailNow()
+		}
+	}
+}
+
+func TestGetResultsCSVString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		results *[]fpl.Result
+		want    string
+	}{
+		{
+			&[]fpl.Result{
+				{CumulativeIncome: 10000, CumulativeExpenses: -10000},
+				{CumulativeIncome: 20000, CumulativeExpenses: -20000},
+			}, `0001-01-01,$0.00,$100.00,$-100.00,$0.00,$0.00,$0.00,$0.00,
+0001-01-01,$0.00,$200.00,$-200.00,$0.00,$0.00,$0.00,$0.00,
+`,
+		},
+	}
+
+	for i, test := range tests {
+		got := fpl.GetResultsCSVString(test.results)
+		if got != test.want {
+			t.Logf("test %v failed: got %v but wanted %v", i, got, test.want)
+			t.FailNow()
+		}
+	}
+}
+
+func TestGetDateFromStrSafe(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	t1 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		s    string
+		t    time.Time
+		want time.Time
+	}{
+		{"0-0-0", now, t1},
+		{"--", now, t1},
+		{"", now, t1},
+		{"2024-02-01", now, time.Date(2024, time.February, 1, 0, 0, 0, 0, time.UTC)},
+	}
+
+	for i, test := range tests {
+		got := fpl.GetDateFromStrSafe(test.s, test.t)
+		if got != test.want {
+			t.Logf("test %v failed: got %v but wanted %v", i, got, test.want)
+			t.FailNow()
+		}
+	}
+}
+
+// Tests various minimal utility functions relating to transactions.
+//
+//nolint:cyclop
+func TestTXUtilityFunctions(t *testing.T) {
+	t.Parallel()
+
+	tx1 := fpl.TX{
+		StartsYear:  2024,
+		StartsMonth: int(time.January),
+		StartsDay:   1,
+		EndsYear:    2025,
+		EndsMonth:   int(time.February),
+		EndsDay:     2,
+		ID:          "foo1",
+	}
+
+	tx2 := fpl.TX{
+		StartsYear:  2024,
+		StartsMonth: int(time.January),
+		StartsDay:   1,
+		EndsYear:    2025,
+		EndsMonth:   int(time.February),
+		EndsDay:     2,
+		ID:          "foo2",
+	}
+
+	tx3 := fpl.TX{
+		StartsYear:  2024,
+		StartsMonth: int(time.January),
+		StartsDay:   1,
+		EndsYear:    2025,
+		EndsMonth:   int(time.February),
+		EndsDay:     2,
+		ID:          "foo3",
+	}
+
+	{
+		got := tx1.GetStartDateString()
+		want := fpl.GetDateString(tx1.StartsYear, tx1.StartsMonth, tx1.StartsDay)
+
+		if got != want {
+			t.Logf("tx1.GetStartDateString test failed: got %v, want %v", got, want)
+			t.Fail()
+		}
+	}
+
+	{
+		got := tx1.GetEndsDateString()
+		want := fpl.GetDateString(tx1.EndsYear, tx1.EndsMonth, tx1.EndsDay)
+
+		if got != want {
+			t.Logf("tx1.GetEndsDateString test failed: got %v, want %v", got, want)
+			t.Fail()
+		}
+	}
+
+	{
+		got := fpl.RemoveTXAtIndex([]fpl.TX{tx1, tx2, tx3}, 0)
+		want := []fpl.TX{tx2, tx3}
+
+		if len(got) != len(want) {
+			t.Logf("RemoveTXAtIndex test failed: got %v, want %v", len(got), len(want))
+			t.FailNow()
+		}
+
+		if got[0].ID != want[0].ID {
+			t.Logf("RemoveTXAtIndex test failed: got %v, want %v", got[0].ID, want[0].ID)
+			t.FailNow()
+		}
+	}
+
+	{
+		got := []fpl.TX{tx1, tx2, tx3}
+		want := []fpl.TX{tx2, tx3}
+
+		fpl.RemoveTXByID(&got, "foo1")
+
+		if len(got) != len(want) {
+			t.Logf("RemoveTXAtIndex test failed: got %v, want %v", len(got), len(want))
+			t.FailNow()
+		}
+
+		if got[0].ID != want[0].ID {
+			t.Logf("RemoveTXAtIndex test failed: got %v, want %v", got[0].ID, want[0].ID)
+			t.FailNow()
+		}
+	}
+
+	{
+		txs := []fpl.TX{tx1, tx2, tx3}
+		got := tx1
+		want := tx1
+		wantIndex := 2
+
+		index, err := fpl.GetTXByID(&txs, "foo3")
+		if err != nil || index == -1 {
+			t.Logf("RemoveTXAtIndex test failed due to error or no index of tx by id")
+			t.FailNow()
+		}
+
+		if got.ID != want.ID {
+			t.Logf("RemoveTXAtIndex test failed: got %v, want %v", got.ID, want.ID)
+			t.FailNow()
+		}
+
+		if index != wantIndex {
+			t.Logf("RemoveTXAtIndex test failed: got %v, want %v", index, wantIndex)
+			t.FailNow()
+		}
+	}
+
+	{
+		txs := []fpl.TX{tx1, tx2, tx3}
+
+		index, err := fpl.GetTXByID(&txs, "bar") // not present
+		if err == nil || index != -1 {
+			t.Logf("RemoveTXAtIndex test failed: got %v, want %v", index, -1)
 			t.FailNow()
 		}
 	}

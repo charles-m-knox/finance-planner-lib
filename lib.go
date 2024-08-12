@@ -4,9 +4,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"log"
-	"math"
-	"os/user"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +11,21 @@ import (
 	"git.cmcode.dev/cmcode/uuid"
 	"github.com/teambition/rrule-go"
 )
+
+// rrule.ROption
+// var examplerro rrule.ROption = rrule.ROption{
+// 	Freq:     rrule.DAILY, // occurs daily
+// 	Interval: 1,           // occurs every X days
+// 	Count:    5,           // ends after 5 occurrences
+// 	Dtstart:  time.Now(),
+// 	Until:    time.Now(),
+
+// 	// 1: First occurrence of the weekday within the month
+// 	// 2: Second occurrence of the weekday within the month
+// 	// -1: Last occurrence of the weekday within the month
+// 	// -2: Second-to-last occurrence of the weekday within the month
+// 	Bysetpos: []int{1, 2, -1, -2},
+// }
 
 type TX struct { // transaction
 	// Order  int    `yaml:"order"`  // manual ordering
@@ -26,8 +38,13 @@ type TX struct { // transaction
 	// https://github.com/teambition/rrule-go/blob/master/rruleset_test.go
 	// https://labix.org/python-dateutil/#head-88ab2bc809145fcf75c074817911575616ce7caf
 	RRule string `yaml:"rrule"`
+
 	// for when users don't want to use the rrules:
-	Frequency   string       `yaml:"frequency"`
+
+	// The frequency of recurrence, such as MONTHLY/YEARLY/DAILY.
+	Frequency string `yaml:"frequency"`
+	// The interval of recurrence. A value of 1 means that this occurs every
+	// 1 month/year/day. A value of 6 means that this occurs every 6th month/year/day.
 	Interval    int          `yaml:"interval"`
 	Weekdays    map[int]bool `yaml:"weekdays"` // monday starts on 0
 	StartsDay   int          `yaml:"startsDay"`
@@ -279,24 +296,24 @@ func GetResults(tx []TX, startDate time.Time, endDate time.Time, startBalance in
 			if txiStartsDate == emptyDate {
 				txiStartsDate = startDate
 			}
-			// convert the user input frequency to a value that rrule lib
-			// will accept
-			freq := rrule.DAILY
-			if txi.Frequency == rrule.YEARLY.String() {
-				freq = rrule.YEARLY
-			} else if txi.Frequency == rrule.MONTHLY.String() {
-				freq = rrule.MONTHLY
-			}
+
+			// This is the rrule that determines the recurrence pattern for
+			// this particular transaction definition.
+			var s *rrule.RRule
+			// These are the rrule options that we are construction for this
+			// particular transaction definition.
+			var rr rrule.ROption
+
 			// convert the user-input weekdays into a value that rrule lib will
 			// accept
 			weekdays := []rrule.Weekday{}
 
-			for weekdayInt, active := range txi.Weekdays {
+			for wi, active := range txi.Weekdays {
 				if !active {
 					continue
 				}
 
-				switch weekdayInt {
+				switch wi {
 				case rrule.MO.Day():
 					weekdays = append(weekdays, rrule.MO)
 				case rrule.TU.Day():
@@ -316,14 +333,26 @@ func GetResults(tx []TX, startDate time.Time, endDate time.Time, startBalance in
 				}
 			}
 
-			// create the rule based on the input parameters from the user
-			s, err := rrule.NewRRule(rrule.ROption{
-				Freq:      freq,
-				Interval:  txi.Interval,
-				Dtstart:   txiStartsDate,
-				Until:     txiEndsDate,
-				Byweekday: weekdays,
-			})
+			rr.Dtstart = txiStartsDate
+			rr.Until = txiEndsDate
+			rr.Interval = txi.Interval
+
+			// TODO: this code is unable to support weekdays when using
+			// yearly/monthly recurrence patterns. This library needs to
+			// increment to the next version and the UIs need to be updated
+			// to support this capability.
+
+			switch txi.Frequency {
+			case rrule.YEARLY.String():
+				rr.Freq = rrule.YEARLY
+			case rrule.MONTHLY.String():
+				rr.Freq = rrule.MONTHLY
+			default:
+				rr.Freq = rrule.DAILY
+				rr.Byweekday = weekdays
+			}
+
+			s, err = rrule.NewRRule(rr)
 			if err != nil {
 				return []Result{}, fmt.Errorf(
 					"failed to construct rrule for tx %v: %v",
@@ -475,68 +504,87 @@ func GetTXByID(txs *[]TX, id string) (int, error) {
 	return -1, errors.New("not present")
 }
 
+// GetDateFromStrSafe converts a provided string, typically formatted like
+// "YYYY-MM-DD" into a valid time.Time. If the provided string is not formatted
+// in this manner, then the argument t is used as the resulting time.Time value
+// instead, with its date being set to t.Year, t.Month, t.Day and its
+// hours/minutes/seconds being set to zero.
+func GetDateFromStrSafe(s string, t time.Time) time.Time {
+	if s == "0-0-0" || s == "--" || s == "" {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	}
+
+	y, m, d := ParseYearMonthDateString(s)
+
+	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
+}
+
 // GenerateResultsFromDateStrings takes an input start and end date (either can
 // be the default '0-0-0' values, in which case it uses today for the start,
 // and a year from now for the end), and calculates all of the calculable
 // transactions for the provided range.
-func GenerateResultsFromDateStrings(
-	txs *[]TX,
-	bal int,
-	startDt string,
-	endDt string,
-	statusHook func(status string),
-) ([]Result, error) {
-	now := time.Now()
-	stYr, stMo, stDay := ParseYearMonthDateString(startDt)
-	endYr, endMo, endDay := ParseYearMonthDateString(endDt)
+// func GenerateResultsFromDateStrings(
+// 	txs *[]TX,
+// 	bal int,
+// 	startDt string,
+// 	endDt string,
+// 	statusHook func(status string),
+// ) ([]Result, error) {
+// 	now := time.Now()
+// 	stYr, stMo, stDay := ParseYearMonthDateString(startDt)
+// 	endYr, endMo, endDay := ParseYearMonthDateString(endDt)
 
-	if startDt == "0-0-0" || startDt == "--" || startDt == "" {
-		stYr = now.Year()
-		stMo = int(now.Month())
-		stDay = now.Day()
-	}
+// 	if startDt == "0-0-0" || startDt == "--" || startDt == "" {
+// 		stYr = now.Year()
+// 		stMo = int(now.Month())
+// 		stDay = now.Day()
+// 	}
 
-	if endDt == "0-0-0" || endDt == "--" || endDt == "" {
-		endYr = now.Year() + 1
-		endMo = int(now.Month())
-		endDay = now.Day()
-	}
+// 	if endDt == "0-0-0" || endDt == "--" || endDt == "" {
+// 		endYr = now.Year() + 1
+// 		endMo = int(now.Month())
+// 		endDay = now.Day()
+// 	}
 
-	res, err := GetResults(
-		*txs,
-		time.Date(stYr, time.Month(stMo), stDay, 0, 0, 0, 0, time.UTC),
-		time.Date(endYr, time.Month(endMo), endDay, 0, 0, 0, 0, time.UTC),
-		bal,
-		statusHook,
-	)
-	if err != nil {
-		return []Result{}, fmt.Errorf("failed to get results: %v", err.Error())
-	}
+// 	res, err := GetResults(
+// 		*txs,
+// 		time.Date(stYr, time.Month(stMo), stDay, 0, 0, 0, 0, time.UTC),
+// 		time.Date(endYr, time.Month(endMo), endDay, 0, 0, 0, 0, time.UTC),
+// 		bal,
+// 		statusHook,
+// 	)
+// 	if err != nil {
+// 		return []Result{}, fmt.Errorf("failed to get results: %v", err.Error())
+// 	}
 
-	return res, nil
+// 	return res, nil
+// }
+
+type TXStats struct {
+	DailySpending   int
+	DailyIncome     int
+	DailyNet        int
+	MonthlySpending int
+	MonthlyIncome   int
+	MonthlyNet      int
+	YearlySpending  int
+	YearlyIncome    int
+	YearlyNet       int
 }
 
-const (
-	// Float representation of months in a year.
-	mof float64 = 12
-	// Float representation of days in a year.
-	yrf float64 = 365
-)
-
-// GetStats spits out some quick calculations about the provided set of results.
-// Calculations include, for example, yearly+monthly+daily income/expenses, as
-// well as some other things. Users may want to copy this information to the
-// clipboard.
-func GetStats(results []Result) string {
+func CalculateStats(results []Result) TXStats {
 	count := len(results)
+	if count <= 1 {
+		return TXStats{}
+	}
+
 	ci := count - 1
-	countf := float64(count)
 
-	// Cumulative expenses at the end of the calculation period.
-	var cuex float64
+	// // Cumulative expenses at the end of the calculation period.
+	var cuex int
 
-	// Cumulative income at the end of the calculation period.
-	var cuin float64
+	// // Cumulative income at the end of the calculation period.
+	var cuin int
 
 	// Daily spending average.
 	var ds int
@@ -556,46 +604,61 @@ func GetStats(results []Result) string {
 	// Year income average.
 	var yi int
 
-	// Months elapsed over the duration.
-	var mos float64
+	cuex = results[ci].CumulativeExpenses
+	cuin = results[ci].CumulativeIncome
 
-	// Years elapsed over the duration.
-	var yrs float64
+	ds = CalculateDailyRate(cuex, count)
+	di = CalculateDailyRate(cuin, count)
+	ms = CalculateMonthlyRate(cuex, count)
+	mi = CalculateMonthlyRate(cuin, count)
+	ys = CalculateYearlyRate(cuex, count)
+	yi = CalculateYearlyRate(cuin, count)
 
-	mos = countf / mof
-	yrs = countf / yrf
+	return TXStats{
+		DailySpending:   ds,
+		DailyIncome:     di,
+		DailyNet:        ds + di,
+		MonthlySpending: ms,
+		MonthlyIncome:   mi,
+		MonthlyNet:      ms + mi,
+		YearlySpending:  ys,
+		YearlyIncome:    yi,
+		YearlyNet:       ys + yi,
+	}
+}
 
-	cuex = float64(results[ci].CumulativeExpenses)
-	cuin = float64(results[ci].CumulativeIncome)
-
-	ds = int(math.Round(cuex / countf))
-	di = int(math.Round(cuin / countf))
-	ms = int(math.Round(cuex / mos))
-	mi = int(math.Round(cuin / mos))
-	ys = int(math.Round(cuex / yrs))
-	yi = int(math.Round(cuin / yrs))
-
+func (s *TXStats) GetStats() string {
 	return fmt.Sprintf(`Here are some statistics about your finances.
 
 Daily spending: %v
 Daily income: %v
-Daily net: %v,
+Daily net: %v
 Monthly spending: %v
 Monthly income: %v
 Monthly net: %v
 Yearly spending: %v
 Yearly income: %v
 Yearly net: %v`,
-		FormatAsCurrency(ds),
-		FormatAsCurrency(di),
-		FormatAsCurrency(ds+di),
-		FormatAsCurrency(ms),
-		FormatAsCurrency(mi),
-		FormatAsCurrency(ms+mi),
-		FormatAsCurrency(ys),
-		FormatAsCurrency(yi),
-		FormatAsCurrency(ys+yi),
+		FormatAsCurrency(s.DailySpending),
+		FormatAsCurrency(s.DailyIncome),
+		FormatAsCurrency(s.DailyNet),
+		FormatAsCurrency(s.MonthlySpending),
+		FormatAsCurrency(s.MonthlyIncome),
+		FormatAsCurrency(s.MonthlyNet),
+		FormatAsCurrency(s.YearlySpending),
+		FormatAsCurrency(s.YearlyIncome),
+		FormatAsCurrency(s.YearlyNet),
 	)
+}
+
+// GetStats spits out some quick calculations about the provided set of results.
+// Calculations include, for example, yearly+monthly+daily income/expenses, as
+// well as some other things. Users may want to copy this information to the
+// clipboard.
+func GetStats(results []Result) string {
+	s := CalculateStats(results)
+
+	return s.GetStats()
 }
 
 func GetResultsCSVString(results *[]Result) string {
@@ -621,14 +684,14 @@ func GetResultsCSVString(results *[]Result) string {
 	return b.String()
 }
 
-func GetUser() *user.User {
-	user, err := user.Current()
-	if err != nil {
-		log.Printf("failed to get the user's home directory: %v", err.Error())
-	}
+// func GetUser() *user.User {
+// 	user, err := user.Current()
+// 	if err != nil {
+// 		log.Printf("failed to get the user's home directory: %v", err.Error())
+// 	}
 
-	return user
-}
+// 	return user
+// }
 
 // GetNextSort takes the current sort, which is typically something like
 // OrderAsc, OrderDesc, or None, and attempts to do some basic string parsing
