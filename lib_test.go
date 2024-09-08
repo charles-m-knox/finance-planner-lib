@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	fpl "git.cmcode.dev/cmcode/finance-planner-lib"
-	"git.cmcode.dev/cmcode/uuid"
+	fpl "github.com/charles-m-knox/finance-planner-lib"
+	uuid "github.com/charles-m-knox/go-uuid"
 	"github.com/teambition/rrule-go"
 )
 

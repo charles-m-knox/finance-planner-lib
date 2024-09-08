@@ -3,7 +3,7 @@ package fplib_test
 import (
 	"testing"
 
-	fpl "git.cmcode.dev/cmcode/finance-planner-lib"
+	fpl "github.com/charles-m-knox/finance-planner-lib"
 )
 
 func TestCalculateMonthlyRate(t *testing.T) {

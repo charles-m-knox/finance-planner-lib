@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"git.cmcode.dev/cmcode/uuid"
+	uuid "github.com/charles-m-knox/go-uuid"
 	"github.com/teambition/rrule-go"
 )
 

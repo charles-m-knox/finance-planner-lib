@@ -1,8 +1,8 @@
-module git.cmcode.dev/cmcode/finance-planner-lib
+module github.com/charles-m-knox/finance-planner-lib
 
 go 1.22.5
 
 require (
-	git.cmcode.dev/cmcode/uuid v0.0.1
+	github.com/charles-m-knox/go-uuid v0.0.2
 	github.com/teambition/rrule-go v1.8.2
 )

@@ -1,4 +1,4 @@
-git.cmcode.dev/cmcode/uuid v0.0.1 h1:EeBhT7bPufbih43obmwa7jJBmPYKRNjCdRrw3Q9LDPE=
-git.cmcode.dev/cmcode/uuid v0.0.1/go.mod h1:Ox5s2GqIMNmj/rAFMKuK56gS6miDJexeMiuiTMnYFCU=
+github.com/charles-m-knox/go-uuid v0.0.2 h1:ypob7j0dpeBEXjy1q8mIrrdwxGg8LZOZfmiwPWx+gTw=
+github.com/charles-m-knox/go-uuid v0.0.2/go.mod h1:8CiTxJeu4s4uLb8itbezDiO3qrmkk8s3nybi1E0JYrw=
 github.com/teambition/rrule-go v1.8.2 h1:lIjpjvWTj9fFUZCmuoVDrKVOtdiyzbzc93qTmRVe/J8=
 github.com/teambition/rrule-go v1.8.2/go.mod h1:Ieq5AbrKGciP1V//Wq8ktsTXwSwJHDD5mD/wLBGl3p4=

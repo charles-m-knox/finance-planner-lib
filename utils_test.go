@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	fpl "git.cmcode.dev/cmcode/finance-planner-lib"
+	fpl "github.com/charles-m-knox/finance-planner-lib"
 )
 
 func TestFormatAsCurrency(t *testing.T) {
